@@ -1,11 +1,12 @@
 ---
 id: core-design
 title: 核心设计
-tags: [design, agent-wiki, core]
 created: 2026-05-10
 updated: 2026-05-10
-used_count: 0
+used_count: 2
 summary: agent-wiki 的核心设计是 Skill 负责约束 agent 行为，Go CLI 负责约束知识库文件系统写入。
+last_used: 2026-05-10
+last_used_reason: 思考下一步优化方向时采用核心边界
 ---
 
 # 核心设计

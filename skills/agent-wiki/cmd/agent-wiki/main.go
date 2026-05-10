@@ -369,7 +369,6 @@ func cmdAdd(root string, args []string) error {
 	fs.SetOutput(os.Stderr)
 	title := fs.String("title", "", "知识标题")
 	summary := fs.String("summary", "", "一句话摘要")
-	tags := fs.String("tags", "", "逗号分隔 tags")
 	bodyStdin := fs.Bool("body-stdin", false, "从 stdin 读取正文")
 	bodyFile := fs.String("body-file", "", "从文件读取正文")
 	categoryPurpose := fs.String("category-purpose", "", "新建目录时写入 .meta.yaml 的用途说明")
@@ -377,10 +376,10 @@ func cmdAdd(root string, args []string) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("用法: agent-wiki add ./category/topic.md --title ... --summary ... --tags a,b --body-stdin")
+		return errors.New("用法: agent-wiki add ./category/topic.md --title ... --summary ... --body-stdin")
 	}
-	if *title == "" || *summary == "" || *tags == "" {
-		return errors.New("add 需要 --title、--summary、--tags")
+	if *title == "" || *summary == "" {
+		return errors.New("add 需要 --title、--summary")
 	}
 	if (*bodyStdin && *bodyFile != "") || (!*bodyStdin && *bodyFile == "") {
 		return errors.New("必须且只能使用 --body-stdin 或 --body-file")
@@ -418,8 +417,8 @@ func cmdAdd(root string, args []string) error {
 	}
 	now := time.Now().Format("2006-01-02")
 	id := strings.TrimSuffix(filepath.Base(rel), ".md")
-	text := fmt.Sprintf("---\nid: %s\ntitle: %s\ntags: [%s]\ncreated: %s\nupdated: %s\nused_count: 0\nsummary: %s\n---\n\n%s",
-		id, *title, normalizeTags(*tags), now, now, *summary, bodyText)
+	text := fmt.Sprintf("---\nid: %s\ntitle: %s\ncreated: %s\nupdated: %s\nused_count: 0\nsummary: %s\n---\n\n%s",
+		id, *title, now, now, *summary, bodyText)
 	if err := os.WriteFile(target, []byte(text), 0o644); err != nil {
 		return err
 	}
@@ -629,18 +628,6 @@ func isKnowledgeRel(rel string) bool {
 	return strings.HasSuffix(rel, ".md") && base != "AGENT_CONTEXT.md"
 }
 
-func normalizeTags(tags string) string {
-	parts := strings.Split(tags, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-	return strings.Join(out, ", ")
-}
-
 func ensureMetasForPath(root, dir, categoryPurpose string) error {
 	rel, err := filepath.Rel(root, dir)
 	if err != nil {
@@ -779,7 +766,7 @@ func updateFrontmatterFields(path string, fields map[string]string) error {
 }
 
 func orderedFrontmatterKeys(fields map[string]string) []string {
-	preferred := []string{"id", "title", "tags", "created", "updated", "used_count", "last_used", "last_used_reason", "context_mode", "summary"}
+	preferred := []string{"id", "title", "created", "updated", "used_count", "last_used", "last_used_reason", "context_mode", "summary"}
 	var keys []string
 	seen := map[string]bool{}
 	for _, key := range preferred {

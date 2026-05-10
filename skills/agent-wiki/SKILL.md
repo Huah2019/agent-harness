@@ -11,7 +11,30 @@ description: agent知识库。当 agent 需要查阅项目知识、搜索历史�
 
 底层仍是 Markdown 文件,但读取、修改、目录 meta 与上下文刷新都由 CLI 统一处理。skill 目录只保存使用协议和 CLI,不保存知识库数据。
 
-## 1. 存储结构
+## 1. 知识沉淀边界
+
+知识库用于维护会影响 agent 后续判断和行动的项目记忆,不是把项目里的所有信息搬进 Markdown。目录结构可以按项目自然演进,不要把某一套分类写死;真正稳定的是判断标准。
+
+适合沉淀的内容:
+
+- 项目定位、边界和长期目标:例如这个仓库承担什么、不承担什么。
+- 核心设计判断和取舍:尤其是代码或 README 里看不出原因的决定。
+- 可复用工作流和验证路径:下次 agent 进来应该先看什么、改完跑什么、如何收尾。
+- 常见坑、排查入口和禁止事项:能避免未来重复踩坑的信息。
+- 演进队列和阶段性优先级:帮助 agent 知道项目接下来应该怎么持续变好。
+- 已废弃方案和反例:防止后续工作又绕回已否定的方向。
+
+不适合沉淀的内容:
+
+- 可以直接从代码、测试、README 或命令输出稳定获得的普通实现细节。
+- 一次性任务流水账、临时状态、无复用价值的聊天总结。
+- 尚未验证的猜测,除非明确标注为假设和验证方式。
+- 大段复制外部文档或日志;只记录项目相关结论、来源和下一步动作。
+- 只为了“存下来”而写的目录或条目;每条知识都应该能改变下次 agent 的行为。
+
+任务结束时,agent 应做一次轻量反思:本次是否产生了新的长期判断、常见坑、验证流程、演进方向或废弃方案。如果没有,不要强行更新知识库;如果有,必须通过本 skill 的 CLI 写入或修改,并运行 `check`。
+
+## 2. 存储结构
 
 知识库存储结构:
 
@@ -34,7 +57,7 @@ wiki/
 - 目录说明来自该目录 `.meta.yaml` 的 `summary`。
 - 文件名使用 `kebab-case.md`,语义清晰,不要在文件名中塞日期或 ID。
 
-## 2. 目录 meta 与知识 frontmatter
+## 3. 目录 meta 与知识 frontmatter
 
 目录 `.meta.yaml`:
 
@@ -50,7 +73,6 @@ summary: <一句话目录说明,供 map/context 展示>
 ---
 id: <kebab-case 的 slug,在所属目录内唯一>
 title: <人类可读标题>
-tags: [tag1, tag2]
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 used_count: 0
@@ -71,9 +93,8 @@ summary: <一句话摘要,≤ 120 字符,供 map/context 展示>
 - `id` 是知识的稳定身份,移动文件时不得改变。
 - `used_count` / `last_used` / `last_used_reason` 记录在知识自身 frontmatter 中。
 - 内容变更后 CLI 会刷新 `updated`。
-- `tags` 一律小写 kebab-case。
 
-## 3. CLI 入口
+## 4. CLI 入口
 
 在 workspace 内使用本 skill 时,使用当前 workspace 中本 skill 自带的 CLI 包装脚本。它会自动绑定本 skill 自带的知识库,不要传知识库路径。
 
@@ -105,9 +126,9 @@ go run ./cmd/agent-wiki <command>
 
 第一版 `run` 只允许 `rg`、`sed`、`cat`、`nl`、`ls`、`find`。CLI 不通过 shell 执行命令,并拒绝 shell 元字符、绝对路径、`..` 和非 `./` 开头路径。
 
-## 4. LLM 必须遵循的工作流
+## 5. LLM 必须遵循的工作流
 
-### 4.1 查看入口上下文
+### 5.1 查看入口上下文
 
 ```bash
 ./.agents/skills/agent-wiki/bin/agent-wiki context
@@ -115,7 +136,7 @@ go run ./cmd/agent-wiki <command>
 
 不要直接 `cat` 知识库里的 `AGENT_CONTEXT.md`。
 
-### 4.2 搜索和读取知识
+### 5.2 搜索和读取知识
 
 先看知识地图:
 
@@ -124,7 +145,7 @@ go run ./cmd/agent-wiki <command>
 ./.agents/skills/agent-wiki/bin/agent-wiki map ./general-engineering
 ```
 
-`map` 默认 `--depth 1`,只展示目录结构和文件 `summary`,不展示 title/tags/used 等噪声字段。它不写任何状态,用于让 agent 先理解知识空间,再决定读取哪条知识。
+`map` 默认 `--depth 1`,只展示目录结构和文件 `summary`,不展示 title/used 等噪声字段。它不写任何状态,用于让 agent 先理解知识空间,再决定读取哪条知识。
 
 搜索:
 
@@ -148,7 +169,7 @@ go run ./cmd/agent-wiki <command>
 
 `use` 会更新该知识文件 frontmatter 中的 `used_count` / `last_used` / `last_used_reason`。`AGENT_CONTEXT.md` 的热点区只扫描知识文件自身的 `used_count`,不要把“读过”当成“有用”。
 
-### 4.3 移动知识
+### 5.3 移动知识
 
 移动条目:
 
@@ -173,7 +194,7 @@ go run ./cmd/agent-wiki <command>
 - 删除条目后清理只剩 `.meta.yaml` 的空目录。
 - 刷新根 `AGENT_CONTEXT.md`。
 
-### 4.4 增量修改知识
+### 5.4 增量修改知识
 
 新增知识:
 
@@ -181,7 +202,6 @@ go run ./cmd/agent-wiki <command>
 ./.agents/skills/agent-wiki/bin/agent-wiki add ./category/topic.md \
   --title "标题" \
   --summary "一句话摘要" \
-  --tags tag1,tag2 \
   --category-purpose "新建目录时的用途说明" \
   --body-stdin
 ```
@@ -201,7 +221,7 @@ agent 生成 unified diff 到临时 patch 文件,再交给 CLI:
 - 自动更新被改条目的 `updated`。
 - 刷新根 `AGENT_CONTEXT.md`。
 
-### 4.5 收尾校验
+### 5.5 收尾校验
 
 ```bash
 ./.agents/skills/agent-wiki/bin/agent-wiki check
@@ -209,7 +229,7 @@ agent 生成 unified diff 到临时 patch 文件,再交给 CLI:
 
 完成任何知识库操作后,必须运行 `check`。
 
-## 5. 严禁项
+## 6. 严禁项
 
 - 不得直接读取、编辑、移动或删除知识库文件。
 - 不得手工编辑 `AGENT_CONTEXT.md` 的生成内容。

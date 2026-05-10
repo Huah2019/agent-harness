@@ -27,7 +27,6 @@ func copyWiki(t *testing.T) string {
 	writeFile(t, filepath.Join(root, "examples", "hello-world.md"), `---
 id: hello-world
 title: Hello World — 样例知识条目
-tags: [example, template]
 created: 2026-05-10
 updated: 2026-05-10
 used_count: 0
@@ -116,7 +115,6 @@ func TestContextRefreshesBeforePrinting(t *testing.T) {
 	entry := `---
 id: context-refresh
 title: Context Refresh
-tags: [example]
 created: 2026-05-10
 updated: 2026-05-11
 summary: 验证 context 命令会先刷新再输出。
@@ -231,7 +229,6 @@ func TestRemoveDeletesKnowledgeRefreshesContextAndPrunesEmptyDirs(t *testing.T) 
 	entry := `---
 id: service-idl-overpass
 title: Service IDL Overpass
-tags: [service-dev]
 created: 2026-05-10
 updated: 2026-05-10
 used_count: 0
@@ -296,7 +293,7 @@ func TestMapDirectoryShowsSimpleFileSummaries(t *testing.T) {
 	if !strings.Contains(stdout, "examples/") || !strings.Contains(stdout, "hello-world.md — 演示规范 frontmatter 与正文结构的最小示例。") {
 		t.Fatalf("map should show simple file summaries: %s", stdout)
 	}
-	if strings.Contains(stdout, "title:") || strings.Contains(stdout, "tags:") || strings.Contains(stdout, "Hello World — 样例知识条目") {
+	if strings.Contains(stdout, "title:") || strings.Contains(stdout, "created:") || strings.Contains(stdout, "Hello World — 样例知识条目") {
 		t.Fatalf("map should avoid noisy metadata: %s", stdout)
 	}
 }
@@ -321,7 +318,6 @@ func TestPatchAppliesChangeRefreshesContextAndRecordsUpdate(t *testing.T) {
 	patch := `--- a/examples/hello-world.md
 +++ b/examples/hello-world.md
 @@ -4,13 +4,13 @@
- tags: [example, template]
  created: 2026-05-10
  updated: 2026-05-10
  used_count: 0
@@ -365,7 +361,6 @@ func TestAddCreatesEntryIndexesContextAndRecordsCreate(t *testing.T) {
 		"add", "./rd-workflow/service-dev.md",
 		"--title", "服务开发速查",
 		"--summary", "说明 IDL、Overpass 与服务仓库之间的最小开发流程。",
-		"--tags", "rd-workflow,service-dev,idl,overpass",
 		"--body-stdin",
 		"--category-purpose", "剪映后端研发流程知识",
 	}
@@ -381,6 +376,9 @@ func TestAddCreatesEntryIndexesContextAndRecordsCreate(t *testing.T) {
 	context, _ := os.ReadFile(filepath.Join(root, "AGENT_CONTEXT.md"))
 	if !strings.Contains(string(entry), "title: 服务开发速查") {
 		t.Fatalf("entry missing frontmatter: %s", entry)
+	}
+	if strings.Contains(string(entry), "tags:") {
+		t.Fatalf("entry should not include tags frontmatter: %s", entry)
 	}
 	if !strings.Contains(string(categoryMeta), "summary: 剪映后端研发流程知识") {
 		t.Fatalf("category meta missing purpose: %s", categoryMeta)
