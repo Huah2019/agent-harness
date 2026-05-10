@@ -4,7 +4,7 @@ _以下生成区由 `agent-wiki` CLI 自动维护,请勿手工编辑。_
 
 <!-- BEGIN: top-level -->
 ## 一级目录
-- [examples/](./examples/.meta.yaml) — 兼作模板使用的样例知识条目。
+- [design/](./design/.meta.yaml) — 只记录当前项目不容易从代码和 Skill 说明直接看出的核心设计判断。
 <!-- END: top-level -->
 
 <!-- BEGIN: hot -->
@@ -14,5 +14,5 @@ _(暂无有用反馈)_
 
 <!-- BEGIN: recent -->
 ## 最近 — 按 `updated` 排序 Top 10
-1. [Hello World — 样例知识条目](./examples/hello-world.md) — 演示规范 frontmatter 与正文结构的最小示例。 · 更新于 2026-05-10
+1. [核心设计](./design/core-design.md) — agent-wiki 的核心设计是 Skill 负责约束 agent 行为，Go CLI 负责约束知识库文件系统写入。 · 更新于 2026-05-10
 <!-- END: recent -->
