@@ -96,7 +96,7 @@ summary: <一句话摘要,≤ 120 字符,供 map/context 展示>
 
 ## 4. CLI 入口
 
-在 workspace 内使用本 skill 时,使用当前 workspace 中本 skill 自带的 CLI 包装脚本。它会自动绑定本 skill 自带的知识库,不要传知识库路径。
+在 workspace 内使用本 skill 时,使用当前 workspace 中本 skill 自带的 CLI 包装脚本。包装脚本会按配置绑定知识库根目录;常规使用不需要传知识库路径。
 
 ```bash
 ./.agents/skills/agent-wiki/bin/agent-wiki <command>
@@ -121,10 +121,10 @@ go run ./cmd/agent-wiki <command>
 | `move <old> <new> ...` | 移动知识条目,保留 `id` / `used_count`,刷新 AGENT_CONTEXT。 |
 | `remove <path>` | 删除知识条目,自动清理空目录并刷新 AGENT_CONTEXT。 |
 | `run <allowed-command> [args...]` | 在绑定目录内执行受控只读命令。 |
-| `patch --patch-file <file>` | 应用 unified diff,并自动记录事件、刷新 AGENT_CONTEXT。 |
+| `patch` | 从 stdin 应用 unified diff,自动更新 `updated` 并刷新 AGENT_CONTEXT。 |
 | `check` | 校验知识库不变量,不修改文件。 |
 
-第一版 `run` 只允许 `rg`、`sed`、`cat`、`nl`、`ls`、`find`。CLI 不通过 shell 执行命令,并拒绝 shell 元字符、绝对路径、`..` 和非 `./` 开头路径。
+`run` 仅允许 `rg`、`sed`、`cat`、`nl`、`ls`、`find`。CLI 不通过 shell 执行命令,并拒绝 shell 元字符、绝对路径、`..` 和非 `./` 开头路径。
 
 ## 5. LLM 必须遵循的工作流
 
@@ -208,10 +208,18 @@ go run ./cmd/agent-wiki <command>
 
 `add` 只能创建不存在的知识条目;正文可通过 `--body-stdin` 或 `--body-file` 提供。首次创建一级分类时必须提供清晰的 `--category-purpose`。
 
-agent 生成 unified diff 到临时 patch 文件,再交给 CLI:
+agent 生成完整 unified diff 后,通过 stdin 传入 CLI:
 
 ```bash
-./.agents/skills/agent-wiki/bin/agent-wiki patch --patch-file /tmp/change.patch
+./.agents/skills/agent-wiki/bin/agent-wiki patch <<'PATCH'
+--- a/category/topic.md
++++ b/category/topic.md
+@@ -1,3 +1,3 @@
+ # 标题
+
+-旧内容
++新内容
+PATCH
 ```
 
 `patch` 会:

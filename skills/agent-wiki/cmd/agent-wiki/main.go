@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -462,21 +464,20 @@ func cmdRun(root string, args []string) error {
 }
 
 func cmdPatch(root string, args []string) error {
-	fs := flag.NewFlagSet("patch", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	patchFile := fs.String("patch-file", "", "patch 文件路径")
-	if err := fs.Parse(args); err != nil {
-		return err
+	if len(args) != 0 {
+		return errors.New("用法: agent-wiki patch < unified.diff")
 	}
-	if *patchFile == "" {
-		return errors.New("缺少 --patch-file")
-	}
-	changed, err := validatePatch(root, *patchFile)
+	patchContent, err := readPatchContent(os.Stdin)
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("patch", "-p1", "-i", *patchFile)
+	changed, err := validatePatchContent(root, patchContent)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("patch", "-p1")
 	cmd.Dir = root
+	cmd.Stdin = bytes.NewReader(patchContent)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("patch 失败:%v\n%s", err, string(out))
@@ -493,6 +494,17 @@ func cmdPatch(root string, args []string) error {
 	fmt.Print(string(out))
 	fmt.Println("已刷新索引和上下文")
 	return nil
+}
+
+func readPatchContent(stdin io.Reader) ([]byte, error) {
+	content, err := io.ReadAll(stdin)
+	if err != nil {
+		return nil, err
+	}
+	if len(bytes.TrimSpace(content)) == 0 {
+		return nil, errors.New("缺少 patch 内容: 请通过 stdin 传入 unified diff")
+	}
+	return content, nil
 }
 
 func cmdCheck(root string) error {
@@ -670,14 +682,9 @@ func isKebabMD(name string) bool {
 	return ok
 }
 
-func validatePatch(root, patchFile string) (map[string]bool, error) {
-	file, err := os.Open(patchFile)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+func validatePatchContent(root string, content []byte) (map[string]bool, error) {
 	changed := map[string]bool{}
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(bytes.NewReader(content))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "+++ ") {

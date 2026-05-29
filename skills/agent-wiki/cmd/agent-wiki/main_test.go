@@ -97,6 +97,22 @@ func runCLI(t *testing.T, root string, args ...string) (string, string, int) {
 	return "", "", 1
 }
 
+func runCLIWithStdin(t *testing.T, root, stdin string, args ...string) (string, string, int) {
+	t.Helper()
+	fullArgs := append([]string{"run", ".", "--root", root}, args...)
+	cmd := exec.Command("go", fullArgs...)
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return string(out), "", 0
+	}
+	if exit, ok := err.(*exec.ExitError); ok {
+		return "", string(out), exit.ExitCode()
+	}
+	t.Fatal(err)
+	return "", "", 1
+}
+
 func TestContextPrintsAgentContext(t *testing.T) {
 	root := copyWiki(t)
 
@@ -312,9 +328,8 @@ func TestRunRejectsDangerousShellTokensAndParentPaths(t *testing.T) {
 	}
 }
 
-func TestPatchAppliesChangeRefreshesContextAndRecordsUpdate(t *testing.T) {
+func TestPatchReadsUnifiedDiffFromStdin(t *testing.T) {
 	root := copyWiki(t)
-	patchFile := filepath.Join(t.TempDir(), "change.patch")
 	patch := `--- a/examples/hello-world.md
 +++ b/examples/hello-world.md
 @@ -4,13 +4,13 @@
@@ -322,7 +337,7 @@ func TestPatchAppliesChangeRefreshesContextAndRecordsUpdate(t *testing.T) {
  updated: 2026-05-10
  used_count: 0
 -summary: 演示规范 frontmatter 与正文结构的最小示例。
-+summary: 展示 agent-wiki CLI 增量修改能力的最小演示条目。
++summary: 展示 agent-wiki stdin patch 能力的最小演示条目。
  ---
  
  # Hello World — 样例知识条目
@@ -334,11 +349,8 @@ func TestPatchAppliesChangeRefreshesContextAndRecordsUpdate(t *testing.T) {
  
 `
 	patch = strings.Replace(patch, "++++ b/", "+++ b/", 1)
-	if err := os.WriteFile(patchFile, []byte(patch), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
-	_, stderr, code := runCLI(t, root, "patch", "--patch-file", patchFile)
+	_, stderr, code := runCLIWithStdin(t, root, patch, "patch")
 
 	if code != 0 {
 		t.Fatalf("code=%d stderr=%s", code, stderr)
@@ -348,8 +360,18 @@ func TestPatchAppliesChangeRefreshesContextAndRecordsUpdate(t *testing.T) {
 	if !strings.Contains(string(entry), "CLI 受控 patch 能力") {
 		t.Fatalf("entry not patched: %s", entry)
 	}
-	if !strings.Contains(string(context), "CLI 增量修改能力") {
+	if !strings.Contains(string(context), "stdin patch 能力") {
 		t.Fatalf("context not refreshed: %s", context)
+	}
+}
+
+func TestPatchRejectsArguments(t *testing.T) {
+	root := copyWiki(t)
+
+	_, stderr, code := runCLI(t, root, "patch", "--patch-file", "change.patch")
+
+	if code == 0 || !strings.Contains(stderr, "用法: agent-wiki patch < unified.diff") {
+		t.Fatalf("unexpected result: code=%d stderr=%s", code, stderr)
 	}
 }
 
