@@ -48,13 +48,19 @@ type entry struct {
 }
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "--internal-log-write" {
+		if err := writeUsageLog(os.Args[2], os.Stdin); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string) error {
+func run(args []string) (result error) {
 	root, rest, err := parseRoot(args)
 	if err != nil {
 		return err
@@ -76,6 +82,12 @@ func run(args []string) error {
 		return err
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+
+	if rest[0] == "logs" {
+		return queryUsageLogs(canonical, rest[1:])
+	}
+	event := newUsageEvent(canonical, rest)
+	defer func() { event.finish(canonical, result); recordUsageEvent(canonical, event) }()
 	switch rest[0] {
 	case "context":
 		return cmdContext(root)

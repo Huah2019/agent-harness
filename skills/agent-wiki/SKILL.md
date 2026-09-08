@@ -161,7 +161,7 @@ go run ./cmd/agent-wiki <command>
 ./.agents/skills/agent-wiki/bin/agent-wiki run sed -n 1,120p ./examples/hello-world.md
 ```
 
-`cat` / `sed` / `nl` 读取知识条目不会写审计日志;读过不等于有用。只有 `use` 会更新知识的有用反馈计数。
+`cat` / `sed` / `nl` 读取知识条目不增加有用计数;读过不等于有用。只有 `use` 会更新知识的有用反馈计数。
 
 当某条知识确实影响了你的判断、回答或代码改动时,在完成使用后标记有用:
 

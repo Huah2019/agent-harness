@@ -20,7 +20,14 @@
 
 ## 基本用法
 
-在仓库根目录执行：
+首次使用时，在仓库根目录复制配置模板，并按需修改 `wiki_root`。
+`agent-wiki.yaml` 是本机配置，不纳入 Git；已有配置无需重复复制。
+
+```bash
+cp -n skills/agent-wiki/agent-wiki.example.yaml skills/agent-wiki/agent-wiki.yaml
+```
+
+然后在仓库根目录执行：
 
 ```bash
 ./.agents/skills/agent-wiki/bin/agent-wiki context
