@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -30,6 +32,7 @@ type frontmatter struct {
 	Updated    string
 	UsedCount  int
 	LastUsed   string
+	LastUsedAt string
 	LastReason string
 }
 
@@ -57,8 +60,22 @@ func run(args []string) error {
 		return err
 	}
 	if len(rest) == 0 {
-		return errors.New("用法: agent-wiki --root <dir> <context|map|add|use|move|remove|run|patch|check>")
+		return errors.New("用法: agent-wiki --root <dir> <context|map|add|use|move|remove|run|patch|clean|check>")
 	}
+	// Serialize CLI operations across processes; lock files live outside the wiki.
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(filepath.Join(os.TempDir(), fmt.Sprintf("agent-wiki-%x.lock", sha256.Sum256([]byte(canonical)))), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 	switch rest[0] {
 	case "context":
 		return cmdContext(root)
@@ -76,6 +93,8 @@ func run(args []string) error {
 		return cmdRun(root, rest[1:])
 	case "patch":
 		return cmdPatch(root, rest[1:])
+	case "clean":
+		return cmdClean(root, rest[1:])
 	case "check":
 		return cmdCheck(root)
 	default:
@@ -452,7 +471,11 @@ func cmdRun(root string, args []string) error {
 			}
 		}
 	}
-	cmd := exec.Command(name, args[1:]...)
+	commandArgs := append([]string{}, args[1:]...)
+	if name == "rg" {
+		commandArgs = append([]string{"--glob", "!*.orig", "--glob", "!*.rej"}, commandArgs...)
+	}
+	cmd := exec.Command(name, commandArgs...)
 	cmd.Dir = root
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -475,22 +498,102 @@ func cmdPatch(root string, args []string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("patch", "-p1")
-	cmd.Dir = root
+	// Apply in isolation: even a partially successful patch cannot touch live entries.
+	stage, err := os.MkdirTemp("", "agent-wiki-patch-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	originals := map[string][]byte{}
+	modes := map[string]fs.FileMode{}
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, _ := filepath.Rel(root, path)
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("不支持知识库内的符号链接:%s", rel)
+		}
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(stage, rel), 0755)
+		}
+		if !strings.HasSuffix(rel, ".md") && d.Name() != ".meta.yaml" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		originals[rel], modes[rel] = data, info.Mode().Perm()
+		return os.WriteFile(filepath.Join(stage, rel), data, info.Mode().Perm())
+	})
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("patch", "--batch", "-p1")
+	cmd.Dir = stage
 	cmd.Stdin = bytes.NewReader(patchContent)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("patch 失败:%v\n%s", err, string(out))
+		return fmt.Errorf("patch 失败，知识库未修改:%v\n%s", err, out)
 	}
 	today := time.Now().Format("2006-01-02")
 	for rel := range changed {
-		if err := bumpUpdated(filepath.Join(root, rel), today); err != nil {
+		if err := bumpUpdated(filepath.Join(stage, rel), today); err != nil {
 			return err
 		}
 	}
-	if err := refreshContext(root); err != nil {
+	// Backups created by patch are confined to the temporary directory.
+	if err := filepath.WalkDir(stage, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && isPatchResidue(d.Name()) {
+			return os.Remove(path)
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
+	if err := refreshContext(stage); err != nil {
+		return err
+	}
+	if err := cmdCheck(stage); err != nil {
+		return err
+	}
+	// Detect edits made outside this CLI before committing.
+	for rel, original := range originals {
+		current, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil || !bytes.Equal(current, original) {
+			return fmt.Errorf("文件已变化，取消提交:%s", rel)
+		}
+	}
+	changed["AGENT_CONTEXT.md"] = true
+	paths := make([]string, 0, len(changed))
+	for rel := range changed {
+		paths = append(paths, rel)
+	}
+	sort.Strings(paths)
+	var committed []string
+	for _, rel := range paths {
+		data, err := os.ReadFile(filepath.Join(stage, rel))
+		if err == nil {
+			err = atomicWrite(filepath.Join(root, rel), data, modes[rel])
+		}
+		if err != nil {
+			for i := len(committed) - 1; i >= 0; i-- {
+				restored := committed[i]
+				err = errors.Join(err, atomicWrite(filepath.Join(root, restored), originals[restored], modes[restored]))
+			}
+			return fmt.Errorf("提交失败，已尝试回滚:%w", err)
+		}
+		committed = append(committed, rel)
+	}
+
 	fmt.Print(string(out))
 	fmt.Println("已刷新索引和上下文")
 	return nil
@@ -526,6 +629,10 @@ func cmdCheck(root string) error {
 			if _, err := parseDirMeta(filepath.Join(path, ".meta.yaml")); err != nil {
 				problems = append(problems, fmt.Sprintf("目录缺少 .meta.yaml:%s", rel))
 			}
+			return nil
+		}
+		if isPatchResidue(d.Name()) {
+			problems = append(problems, "补丁残留:"+rel)
 			return nil
 		}
 		if !strings.HasSuffix(d.Name(), ".md") || d.Name() == "AGENT_CONTEXT.md" {
@@ -684,15 +791,20 @@ func isKebabMD(name string) bool {
 
 func validatePatchContent(root string, content []byte) (map[string]bool, error) {
 	changed := map[string]bool{}
+	oldPath := ""
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	for scanner.Scan() {
 		line := scanner.Text()
+		if strings.HasPrefix(line, "--- ") {
+			oldPath = strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(line, "--- ")), "a/")
+			continue
+		}
 		if !strings.HasPrefix(line, "+++ ") {
 			continue
 		}
 		path := strings.TrimSpace(strings.TrimPrefix(line, "+++ "))
 		if path == "/dev/null" {
-			continue
+			return nil, errors.New("patch 不支持删除条目，请使用 remove")
 		}
 		if strings.HasPrefix(path, "b/") {
 			path = path[2:]
@@ -703,6 +815,12 @@ func validatePatchContent(root string, content []byte) (map[string]bool, error) 
 		_, rel, err := resolveUserPath(root, "./"+path)
 		if err != nil {
 			return nil, err
+		}
+		if oldPath != rel {
+			return nil, fmt.Errorf("patch 仅支持同路径修改已有条目:%s", rel)
+		}
+		if info, err := os.Lstat(filepath.Join(root, rel)); err != nil || !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("patch 目标不是已有普通文件:%s", rel)
 		}
 		if !isKnowledgeRel(rel) {
 			return nil, fmt.Errorf("patch 只能修改知识条目:%s", rel)
@@ -730,6 +848,7 @@ func incrementUsefulCount(path, date, reason string) error {
 	return updateFrontmatterFields(path, map[string]string{
 		"used_count":       strconv.Itoa(fm.UsedCount + 1),
 		"last_used":        date,
+		"last_used_at":     time.Now().UTC().Format(time.RFC3339Nano),
 		"last_used_reason": sanitizeFrontmatterValue(reason),
 	})
 }
@@ -773,7 +892,7 @@ func updateFrontmatterFields(path string, fields map[string]string) error {
 }
 
 func orderedFrontmatterKeys(fields map[string]string) []string {
-	preferred := []string{"id", "title", "created", "updated", "used_count", "last_used", "last_used_reason", "context_mode", "summary"}
+	preferred := []string{"id", "title", "created", "updated", "used_count", "last_used", "last_used_at", "last_used_reason", "context_mode", "summary"}
 	var keys []string
 	seen := map[string]bool{}
 	for _, key := range preferred {
@@ -825,6 +944,8 @@ func parseFile(path string) (frontmatter, error) {
 			}
 		case "last_used":
 			fm.LastUsed = val
+		case "last_used_at":
+			fm.LastUsedAt = val
 		case "last_used_reason":
 			fm.LastReason = val
 		}
@@ -967,6 +1088,7 @@ func refreshContext(root string) error {
 	text = replaceRegion(text, "top-level", buildTopLevel(root))
 	text = replaceRegion(text, "hot", buildHot(root, entries))
 	text = replaceRegion(text, "recent", buildRecent(entries))
+	text = replaceRegion(text, "recent-useful", buildRecentUseful(entries))
 	return os.WriteFile(filepath.Join(root, "AGENT_CONTEXT.md"), []byte(text), 0o644)
 }
 
@@ -1065,6 +1187,128 @@ func buildRecent(entries []entry) string {
 			break
 		}
 		b.WriteString(fmt.Sprintf("%d. [%s](./%s) — %s · 更新于 %s\n", i+1, e.FM.Title, e.Path, e.FM.Summary, e.FM.Updated))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func atomicWrite(path string, data []byte, mode fs.FileMode) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".agent-wiki-write-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err = f.Chmod(mode); err == nil {
+		_, err = f.Write(data)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	err = errors.Join(err, f.Close())
+	if err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
+}
+
+func isPatchResidue(name string) bool {
+	return strings.HasSuffix(name, ".orig") || strings.HasSuffix(name, ".rej")
+}
+
+// clean archives residues outside the wiki before removing them; rejected edits remain recoverable.
+func cmdClean(root string, args []string) error {
+	if len(args) != 0 {
+		return errors.New("用法: agent-wiki clean (将补丁残留移到外部恢复目录)")
+	}
+	var paths []string
+	if err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && isPatchResidue(d.Name()) {
+			paths = append(paths, path)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		fmt.Println("无补丁残留")
+		return nil
+	}
+	backup, err := os.MkdirTemp("", "agent-wiki-recovery-")
+	if err != nil {
+		return err
+	}
+	fmt.Println("恢复目录:" + backup)
+	// Finish all backups before removing any original.
+	for _, path := range paths {
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("不是普通残留文件:%s", path)
+		}
+		rel, _ := filepath.Rel(root, path)
+		dst := filepath.Join(backup, rel)
+		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := atomicWrite(dst, data, 0600); err != nil {
+			return err
+		}
+	}
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+	}
+	fmt.Printf("已归档并清理 %d 个补丁残留\n", len(paths))
+	return nil
+}
+
+func buildRecentUseful(entries []entry) string {
+	type useful struct {
+		entry   entry
+		at      time.Time
+		display string
+	}
+	var recent []useful
+	for _, e := range entries {
+		if e.FM.UsedCount <= 0 {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339Nano, e.FM.LastUsedAt)
+		display := e.FM.LastUsedAt
+		if err != nil {
+			at, err = time.Parse("2006-01-02", e.FM.LastUsed)
+			display = e.FM.LastUsed
+		}
+		if err == nil {
+			recent = append(recent, useful{e, at, display})
+		}
+	}
+	sort.Slice(recent, func(i, j int) bool {
+		if recent[i].at.Equal(recent[j].at) {
+			return recent[i].entry.Path < recent[j].entry.Path
+		}
+		return recent[i].at.After(recent[j].at)
+	})
+	var b strings.Builder
+	b.WriteString("## 最近反馈有用 Top 10\n")
+	if len(recent) == 0 {
+		b.WriteString("_(暂无有用反馈时间)_")
+	}
+	for i, item := range recent {
+		if i >= 10 {
+			break
+		}
+		// Existing lists already carry summaries; keep this additional entry point compact.
+		fmt.Fprintf(&b, "%d. [%s](./%s) · 最近有用 %s\n", i+1, item.entry.FM.Title, item.entry.Path, item.display)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

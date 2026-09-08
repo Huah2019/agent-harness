@@ -41,7 +41,7 @@ description: agent知识库。当 agent 需要查阅项目知识、搜索历史�
 ```
 wiki/
 ├── .meta.yaml           # 根目录描述,供 map/context 动态扫描
-├── AGENT_CONTEXT.md     # 根上下文:一级目录 + 有用反馈 Top 20 + 最近 Top 10
+├── AGENT_CONTEXT.md     # 根上下文:一级目录 + 有用反馈 Top 20 + 最近更新 Top 10 + 最近反馈有用 Top 10
 ├── <category>/
 │   ├── .meta.yaml       # 目录描述,供 map/context 动态扫描
 │   ├── <topic>.md       # 单条原子知识
@@ -77,6 +77,7 @@ created: YYYY-MM-DD
 updated: YYYY-MM-DD
 used_count: 0
 last_used: YYYY-MM-DD # 可选,由 use 自动维护
+last_used_at: <RFC3339 精确时间> # 可选，新反馈自动记录；旧条目按 last_used 排序
 last_used_reason: <最近一次有用反馈原因> # 可选,由 use 自动维护
 context_mode: summary | digest | inline | hidden # 可选,预留给上下文展开策略
 summary: <一句话摘要,≤ 120 字符,供 map/context 展示>
@@ -122,6 +123,7 @@ go run ./cmd/agent-wiki <command>
 | `remove <path>` | 删除知识条目,自动清理空目录并刷新 AGENT_CONTEXT。 |
 | `run <allowed-command> [args...]` | 在绑定目录内执行受控只读命令。 |
 | `patch` | 从 stdin 应用 unified diff,自动更新 `updated` 并刷新 AGENT_CONTEXT。 |
+| `clean` | 将 `.orig` / `.rej` 类补丁残留备份到知识库外的临时恢复目录后清理；输出恢复路径。 |
 | `check` | 校验知识库不变量,不修改文件。 |
 
 `run` 仅允许 `rg`、`sed`、`cat`、`nl`、`ls`、`find`。CLI 不通过 shell 执行命令,并拒绝 shell 元字符、绝对路径、`..` 和非 `./` 开头路径。
@@ -225,7 +227,8 @@ PATCH
 `patch` 会:
 - 校验 patch 目标必须是绑定目录内的知识条目。
 - 拒绝修改 `.meta.yaml`、`AGENT_CONTEXT.md`。
-- 应用 patch。
+- 在临时目录应用 patch，校验成功后才提交；失败不改动知识库。仅支持同路径修改已有普通知识文件。
+- CLI 操作按知识库加锁，提交前检查原文变化；提交错误时尝试回滚。进程被强制终止或机器掉电不保证跨文件原子性。
 - 自动更新被改条目的 `updated`。
 - 刷新根 `AGENT_CONTEXT.md`。
 
@@ -243,3 +246,9 @@ PATCH
 - 不得手工编辑 `AGENT_CONTEXT.md` 的生成内容。
 - 不得通过 shell 拼接命令绕过 CLI 安全检查。
 - 只有在调试 `agent-wiki` CLI 自身时,才允许直接查看底层文件。
+
+## 残留与最近反馈
+
+`context` 额外生成最近反馈有用 Top 10，按 `last_used_at` 倒序，兼容旧 `last_used` 日期；时间相同按路径排序。该榜单仅列标题、链接和反馈时间，避免重复摘要。`use` 不改变内容 `updated`。
+
+`check` 将 `.orig`、`.rej`（含 `.rej.orig`）视为异常。`run rg` 默认排除这些残留。发现历史残留先核对未应用内容，再运行 `clean`；恢复目录在系统临时目录下，需要长期保留时另行归档。`clean` 不会自动合并拒绝的修改。

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeFile(t *testing.T, dst, text string) {
@@ -420,5 +421,93 @@ func TestCheckReportsValidWiki(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "检查通过") {
 		t.Fatalf("unexpected stdout: %s", stdout)
+	}
+}
+
+func TestFailedPatchLeavesWikiUnchanged(t *testing.T) {
+	root := copyWiki(t)
+	path := filepath.Join(root, "examples/hello-world.md")
+	before, _ := os.ReadFile(path)
+	contextBefore, _ := os.ReadFile(filepath.Join(root, "AGENT_CONTEXT.md"))
+	patch := "--- a/examples/hello-world.md\n+++ b/examples/hello-world.md\n@@ -6 +6 @@\n-used_count: 0\n+used_count: 99\n@@ -15 +15 @@\n-does not exist\n+replacement\n"
+	_, stderr, code := runCLIWithStdin(t, root, patch, "patch")
+	if code == 0 {
+		t.Fatal("expected failed patch")
+	}
+	after, _ := os.ReadFile(path)
+	contextAfter, _ := os.ReadFile(filepath.Join(root, "AGENT_CONTEXT.md"))
+	if string(before) != string(after) || string(contextBefore) != string(contextAfter) {
+		t.Fatalf("failed patch changed wiki: %s", stderr)
+	}
+	if err := cmdCheck(root); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRecentUsefulOrdersExactTimeAndLegacyDates(t *testing.T) {
+	entries := []entry{
+		{Path: "old.md", FM: frontmatter{Title: "old", UsedCount: 99, LastUsed: "2026-09-07"}},
+		{Path: "early.md", FM: frontmatter{Title: "early", UsedCount: 1, LastUsedAt: "2026-09-08T10:00:00Z"}},
+		{Path: "late.md", FM: frontmatter{Title: "late", UsedCount: 1, LastUsedAt: "2026-09-08T19:00:00+08:00"}},
+		{Path: "invalid.md", FM: frontmatter{Title: "invalid", UsedCount: 1, LastUsed: "invalid"}},
+	}
+	result := buildRecentUseful(entries)
+	if strings.Index(result, "[late]") > strings.Index(result, "[early]") || strings.Index(result, "[early]") > strings.Index(result, "[old]") || strings.Contains(result, "[invalid]") {
+		t.Fatal(result)
+	}
+	path := filepath.Join(copyWiki(t), "examples/hello-world.md")
+	if err := incrementUsefulCount(path, "2026-09-08", "test"); err != nil {
+		t.Fatal(err)
+	}
+	fm, err := parseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, fm.LastUsedAt); err != nil {
+		t.Fatal(err)
+	}
+	if fm.Updated != "2026-05-10" || fm.UsedCount != 1 {
+		t.Fatalf("unexpected feedback metadata: %+v", fm)
+	}
+}
+
+func TestCheckAndSearchHandleResidues(t *testing.T) {
+	root := copyWiki(t)
+	writeFile(t, filepath.Join(root, "examples/hello-world.md.rej.orig"), "unique-residue-marker")
+	if err := cmdCheck(root); err == nil || !strings.Contains(err.Error(), "补丁残留") {
+		t.Fatalf("unexpected check: %v", err)
+	}
+	stdout, _, _ := runCLI(t, root, "run", "rg", "unique-residue-marker", "./")
+	if strings.Contains(stdout, "unique-residue-marker") {
+		t.Fatal(stdout)
+	}
+	output, stderr, code := runCLI(t, root, "clean")
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	var backup string
+	for _, line := range strings.Split(output, "\n") {
+		if strings.HasPrefix(line, "恢复目录:") {
+			backup = strings.TrimPrefix(line, "恢复目录:")
+		}
+	}
+	if backup == "" {
+		t.Fatal(output)
+	}
+	defer os.RemoveAll(backup)
+	data, err := os.ReadFile(filepath.Join(backup, "examples/hello-world.md.rej.orig"))
+	if err != nil || string(data) != "unique-residue-marker" {
+		t.Fatalf("missing backup: %v", err)
+	}
+	if err := cmdCheck(root); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPatchRejectsMismatchedOldPath(t *testing.T) {
+	root := copyWiki(t)
+	_, err := validatePatchContent(root, []byte("--- a/../../outside.md\n+++ b/examples/hello-world.md\n"))
+	if err == nil {
+		t.Fatal("unsafe old path accepted")
 	}
 }
