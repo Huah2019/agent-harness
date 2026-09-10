@@ -66,7 +66,7 @@ func run(args []string) (result error) {
 		return err
 	}
 	if len(rest) == 0 {
-		return errors.New("用法: agent-wiki --root <dir> <context|map|add|use|move|remove|run|patch|clean|check>")
+		return errors.New("用法: agent-wiki --root <dir> <context|map|add|use|move|remove|ref|run|patch|clean|check>")
 	}
 	// Serialize CLI operations across processes; lock files live outside the wiki.
 	canonical, err := filepath.EvalSymlinks(root)
@@ -95,6 +95,8 @@ func run(args []string) (result error) {
 		return cmdMap(root, rest[1:])
 	case "add":
 		return cmdAdd(root, rest[1:])
+	case "ref":
+		return cmdRef(root, rest[1:])
 	case "use":
 		return cmdUse(root, rest[1:])
 	case "move":
@@ -275,6 +277,9 @@ func cmdMap(root string, args []string) error {
 	}
 	if *depth < 1 {
 		return errors.New("map --depth 必须 >= 1")
+	}
+	if isReferencePath(rel) {
+		return errors.New("引用文档不进入知识地图，请使用 run 按需读取")
 	}
 	fmt.Print(buildMap(root, start, rel, *depth))
 	return nil
@@ -486,6 +491,15 @@ func cmdRun(root string, args []string) error {
 	commandArgs := append([]string{}, args[1:]...)
 	if name == "rg" {
 		commandArgs = append([]string{"--glob", "!*.orig", "--glob", "!*.rej"}, commandArgs...)
+		includeRefs := false
+		for _, arg := range args[1:] {
+			if strings.HasPrefix(arg, "./") && isReferencePath(filepath.Clean(arg)) {
+				includeRefs = true
+			}
+		}
+		if !includeRefs {
+			commandArgs = append([]string{"--glob", "!**/references/**"}, commandArgs...)
+		}
 	}
 	cmd := exec.Command(name, commandArgs...)
 	cmd.Dir = root
@@ -555,6 +569,9 @@ func cmdPatch(root string, args []string) error {
 	}
 	today := time.Now().Format("2006-01-02")
 	for rel := range changed {
+		if isReferencePath(rel) {
+			continue
+		}
 		if err := bumpUpdated(filepath.Join(stage, rel), today); err != nil {
 			return err
 		}
@@ -637,7 +654,14 @@ func cmdCheck(root string) error {
 		}
 		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
+		if d.Type()&os.ModeSymlink != 0 {
+			problems = append(problems, "不支持符号链接:"+rel)
+			return nil
+		}
 		if d.IsDir() {
+			if isReferencePath(rel) {
+				return nil
+			}
 			if _, err := parseDirMeta(filepath.Join(path, ".meta.yaml")); err != nil {
 				problems = append(problems, fmt.Sprintf("目录缺少 .meta.yaml:%s", rel))
 			}
@@ -647,11 +671,25 @@ func cmdCheck(root string) error {
 			problems = append(problems, "补丁残留:"+rel)
 			return nil
 		}
+		if isReferencePath(rel) && d.Name() == ".meta.yaml" {
+			problems = append(problems, "引用目录不能注册 .meta.yaml:"+rel)
+			return nil
+		}
 		if !strings.HasSuffix(d.Name(), ".md") || d.Name() == "AGENT_CONTEXT.md" {
 			return nil
 		}
 		if !isKebabMD(d.Name()) {
 			problems = append(problems, fmt.Sprintf("文件名不是 kebab-case.md:%s", rel))
+		}
+		if isReferenceRel(rel) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if fmRe.Match(data) {
+				problems = append(problems, "引用文档不能注册知识 frontmatter:"+rel)
+			}
+			return nil
 		}
 		fm, err := parseFile(path)
 		if err != nil {
@@ -675,6 +713,9 @@ func cmdCheck(root string) error {
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("检查失败:\n- %s", strings.Join(problems, "\n- "))
+	}
+	if err := checkReferences(root); err != nil {
+		return err
 	}
 	fmt.Println("检查通过")
 	return nil
@@ -756,7 +797,7 @@ func resolveUserPath(root, raw string) (string, string, error) {
 
 func isKnowledgeRel(rel string) bool {
 	base := filepath.Base(rel)
-	return strings.HasSuffix(rel, ".md") && base != "AGENT_CONTEXT.md"
+	return strings.HasSuffix(rel, ".md") && base != "AGENT_CONTEXT.md" && !isReferencePath(rel)
 }
 
 func ensureMetasForPath(root, dir, categoryPurpose string) error {
@@ -834,8 +875,8 @@ func validatePatchContent(root string, content []byte) (map[string]bool, error) 
 		if info, err := os.Lstat(filepath.Join(root, rel)); err != nil || !info.Mode().IsRegular() {
 			return nil, fmt.Errorf("patch 目标不是已有普通文件:%s", rel)
 		}
-		if !isKnowledgeRel(rel) {
-			return nil, fmt.Errorf("patch 只能修改知识条目:%s", rel)
+		if !isKnowledgeRel(rel) && !isReferenceRel(rel) {
+			return nil, fmt.Errorf("patch 只能修改知识条目或引用文档:%s", rel)
 		}
 		changed[rel] = true
 	}
@@ -1001,6 +1042,9 @@ func collectEntries(root string) ([]entry, error) {
 		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
+			if isReferencePath(rel) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !isKnowledgeRel(rel) {
@@ -1046,7 +1090,7 @@ func writeMapChildren(b *strings.Builder, root, dir string, depth int, indent st
 	var files []fs.DirEntry
 	for _, child := range children {
 		name := child.Name()
-		if name == ".meta.yaml" || name == "AGENT_CONTEXT.md" {
+		if name == ".meta.yaml" || name == "AGENT_CONTEXT.md" || name == "references" {
 			continue
 		}
 		if child.IsDir() {
@@ -1132,7 +1176,7 @@ func buildTopLevel(root string) string {
 		return "## 一级目录\n- _(知识根目录不可读)_"
 	}
 	for _, child := range children {
-		if !child.IsDir() {
+		if !child.IsDir() || child.Name() == "references" {
 			continue
 		}
 		meta, err := parseDirMeta(filepath.Join(root, child.Name(), ".meta.yaml"))

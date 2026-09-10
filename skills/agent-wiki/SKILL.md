@@ -52,8 +52,8 @@ wiki/
 
 **不变量**
 
-- 一个 md 文件 = 一条原子知识,严禁多主题混写。
-- 每个目录都**必须**有 `.meta.yaml`。
+- `references/` 之外的 md 文件是一条原子知识，严禁多主题混写。
+- 知识目录必须有 `.meta.yaml`；`references/` 及其子目录不需要，也不注册目录元数据。
 - 目录说明来自该目录 `.meta.yaml` 的 `summary`。
 - 文件名使用 `kebab-case.md`,语义清晰,不要在文件名中塞日期或 ID。
 
@@ -121,8 +121,11 @@ go run ./cmd/agent-wiki <command>
 | `use <path> --reason ...` | 标记某条知识在当前任务中实际有用,驱动热点排序。 |
 | `move <old> <new> ...` | 移动知识条目,保留 `id` / `used_count`,刷新 AGENT_CONTEXT。 |
 | `remove <path>` | 删除知识条目,自动清理空目录并刷新 AGENT_CONTEXT。 |
+| `ref add <path> --body-file <file>` | 创建 references/ 下的普通 Markdown；也支持 --body-stdin，不注册知识元数据。 |
+| `ref move <old> <new>` | 移动引用文档，更新库内指向它的 Markdown 链接及自身相对链接。 |
+| `ref remove <path>` | 删除引用文档；仍被其他文档引用时拒绝，须先处理链接。 |
 | `run <allowed-command> [args...]` | 在绑定目录内执行受控只读命令。 |
-| `patch` | 从 stdin 应用 unified diff,自动更新 `updated` 并刷新 AGENT_CONTEXT。 |
+| `patch` | 从 stdin 应用 unified diff；知识条目更新 `updated`，引用文档不添加元数据，并刷新 AGENT_CONTEXT。 |
 | `clean` | 将 `.orig` / `.rej` 类补丁残留备份到知识库外的临时恢复目录后清理；输出恢复路径。 |
 | `check` | 校验知识库不变量,不修改文件。 |
 
@@ -147,7 +150,7 @@ go run ./cmd/agent-wiki <command>
 ./.agents/skills/agent-wiki/bin/agent-wiki map ./general-engineering
 ```
 
-`map` 默认 `--depth 1`,只展示目录结构和文件 `summary`,不展示 title/used 等噪声字段。它不写任何状态,用于让 agent 先理解知识空间,再决定读取哪条知识。
+`map` 默认 `--depth 1`,只展示知识目录结构和文件 `summary`，排除 `references/`；不展示 title/used 等噪声字段。它不写任何状态,用于让 agent 先理解知识空间,再决定读取哪条知识。
 
 搜索:
 
@@ -225,11 +228,11 @@ PATCH
 ```
 
 `patch` 会:
-- 校验 patch 目标必须是绑定目录内的知识条目。
+- 校验 patch 目标必须是绑定目录内的知识条目或 references/ 引用文档。
 - 拒绝修改 `.meta.yaml`、`AGENT_CONTEXT.md`。
-- 在临时目录应用 patch，校验成功后才提交；失败不改动知识库。仅支持同路径修改已有普通知识文件。
+- 在临时目录应用 patch，校验成功后才提交；失败不改动知识库。仅支持同路径修改已有普通 Markdown 文件。
 - CLI 操作按知识库加锁，提交前检查原文变化；提交错误时尝试回滚。进程被强制终止或机器掉电不保证跨文件原子性。
-- 自动更新被改条目的 `updated`。
+- 自动更新被改知识条目的 `updated`；引用文档保持普通 Markdown，不添加元数据。
 - 刷新根 `AGENT_CONTEXT.md`。
 
 ### 5.5 收尾校验
@@ -240,7 +243,26 @@ PATCH
 
 完成任何知识库操作后,必须运行 `check`。
 
-## 6. 严禁项
+## 6. 引用文档：按需读取，不注册知识
+
+清单、案例、详细方案等附属资料可放在 `<category>/references/*.md`，由知识条目说明何时读、读来做什么，并使用普通相对 Markdown 链接。允许多个知识条目引用同一份文档。
+
+- 引用文档是非空普通 Markdown，不加知识 frontmatter，没有 `id`、`summary`、`used_count`、`updated` 等强制字段；不调用 `use`，也不会自动升级为知识。
+- 不出现在 `map`、热点、最近更新、最近有用或启动上下文中。默认 `run rg ... ./` 排除引用文档；需要检索时明确指定 `./category/references`。`run cat/sed` 与 `patch` 可以按需读取、编辑，编辑不添加元数据。
+- 只通过 `ref add/move/remove` 管理文件。新建后在相关知识条目中添加链接及读取条件；不要把整份清单复制进知识摘要。
+- `check` 检查库内相对 Markdown 文档链接是否存在；孤立引用文档仅警告、不删除。禁止 references/ 中混入知识 frontmatter 或目录元数据。
+- 移动与删除支持普通内联 Markdown 链接和引用式链接定义（含角括号目标、锚点、查询参数）。代码块、代码行及 HTML 注释里的示例不改写；不要用 HTML 链接或复杂嵌套链接承载受管理引用。外部 URL、绝对路径和页面内锚点不当作库内文档依赖。
+- 移动后运行 `check`，查看更新的知识条目和引用文档。
+
+```bash
+./.agents/skills/agent-wiki/bin/agent-wiki ref add ./editing-copilot/references/draft-registry.md --body-file /absolute/path/registry.md
+./.agents/skills/agent-wiki/bin/agent-wiki run cat ./editing-copilot/references/draft-registry.md
+./.agents/skills/agent-wiki/bin/agent-wiki run rg "关键词" ./editing-copilot/references
+./.agents/skills/agent-wiki/bin/agent-wiki ref move ./editing-copilot/references/draft-registry.md ./editing-copilot/references/evaluation-drafts.md
+./.agents/skills/agent-wiki/bin/agent-wiki ref remove ./editing-copilot/references/evaluation-drafts.md
+```
+
+## 7. 安全边界
 
 - 不得直接读取、编辑、移动或删除知识库文件。
 - 不得手工编辑 `AGENT_CONTEXT.md` 的生成内容。

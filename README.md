@@ -9,6 +9,7 @@
 .
 ├── .agents/skills -> ../skills
 ├── agent-wiki/default-wiki/
+├── docs/
 └── skills/agent-wiki/
 ```
 
@@ -49,3 +50,23 @@ go run ./cmd/agent-wiki context
   `skills/agent-wiki/SKILL.md` 中说明的 `agent-wiki` CLI 命令。
 - 本仓库不依赖全局 Codex hook。其他项目如果要使用这个 skill，应通过自己的
   `.agents/skills` 暴露或链接它。
+
+## 知识与引用文档
+
+知识条目负责告诉 Agent **何时读取、如何使用**资料；清单、案例等详细资料放在
+知识目录下的 `references/`，作为普通 Markdown 维护，不统计有用次数，不进入
+启动上下文、榜单、知识地图或默认搜索。只有读到相关知识、需要资料时才沿链接读取。
+
+- 维护者设计说明：[引用文档设计](docs/agent-wiki-references.md)，不作为 Skill 加载内容。
+- 默认库示例：[核心设计](agent-wiki/default-wiki/design/core-design.md) 引用
+  [资料维护示例清单](agent-wiki/default-wiki/design/references/reference-maintenance-example.md)。
+- Agent 日常命令和约束仍以 `skills/agent-wiki/SKILL.md` 为准。
+
+显式指定默认库可避免本机配置绑定到其他项目：
+
+```bash
+./.agents/skills/agent-wiki/bin/agent-wiki --root ./agent-wiki/default-wiki map
+./.agents/skills/agent-wiki/bin/agent-wiki --root ./agent-wiki/default-wiki run cat ./design/core-design.md
+./.agents/skills/agent-wiki/bin/agent-wiki --root ./agent-wiki/default-wiki run cat ./design/references/reference-maintenance-example.md
+./.agents/skills/agent-wiki/bin/agent-wiki --root ./agent-wiki/default-wiki check
+```
