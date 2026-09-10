@@ -51,13 +51,18 @@ go run ./cmd/agent-wiki context
 - 本仓库不依赖全局 Codex hook。其他项目如果要使用这个 skill，应通过自己的
   `.agents/skills` 暴露或链接它。
 
+## 设计说明
+
+[agent-wiki 整体设计](docs/agent-wiki-design.md) 是维护者的统一设计入口，覆盖目标、
+架构、知识模型、上下文生成、有用反馈、引用资料、写入安全和维护闭环。
+它不在 Skill 中注册，也不自动注入 Agent 上下文。
+
 ## 知识与引用文档
 
 知识条目负责告诉 Agent **何时读取、如何使用**资料；清单、案例等详细资料放在
 知识目录下的 `references/`，作为普通 Markdown 维护，不统计有用次数，不进入
 启动上下文、榜单、知识地图或默认搜索。只有读到相关知识、需要资料时才沿链接读取。
 
-- 维护者设计说明：[引用文档设计](docs/agent-wiki-references.md)，不作为 Skill 加载内容。
 - 默认库示例：[核心设计](agent-wiki/default-wiki/design/core-design.md) 引用
   [资料维护示例清单](agent-wiki/default-wiki/design/references/reference-maintenance-example.md)。
 - Agent 日常命令和约束仍以 `skills/agent-wiki/SKILL.md` 为准。
