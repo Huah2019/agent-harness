@@ -19,7 +19,7 @@ Codex、Claude Code、Traex CLI 默认分别执行 `codex`、`claude`、`traex`�
 
 用户可通过初始化参数 `--backend-command <命令名或绝对路径>` 或 `backends.<name>.command` 显式覆盖，例如 Claude 的 `aiden` 包装。保留显式覆盖，不自动把命令名改写成探测到的绝对路径。
 
-macOS LaunchAgent 保存安装服务时的 `PATH`；新增 CLI 安装目录后应重新执行 `service-install` 更新服务环境。找不到命令时，先检查后台 `PATH`，也可显式配置完整路径。
+macOS LaunchAgent 保存安装服务时的 `PATH`；已有服务重复执行 `service-install` 不会改写 plist。新增 CLI 安装目录后，应核对 `service-status` 返回的私人 plist，备份后更新其 `EnvironmentVariables.PATH` 并重启服务，或按用户意图重新安装服务；不要仅执行 `service-install` 就宣称 PATH 已更新。找不到命令时，先检查后台 `PATH`，也可显式配置完整路径。
 
 ## 字段
 

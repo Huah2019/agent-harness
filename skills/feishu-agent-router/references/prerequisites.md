@@ -1,11 +1,13 @@
 # 飞书与本机前置条件
 
+从空环境开始时先读 [installation.md](installation.md)，其中包含依赖安装、授权和初始化顺序。
+
 ## 本机
 
 - Node.js 18 或更高版本。
 - macOS 或 Linux（含 WSL）。原生 Windows 暂不支持，因为 Runtime 不能保证取消/超时时完整终止 Agent 子进程树，`doctor` 会阻止启动。
 - `lark-cli` 1.0.84 或更高版本，且已完成应用配置。该最低版本用于保证 ready marker、stdin 生命周期、结构化错误和 reply message ID 契约。
-- 至少一个可从 stdin 读取 prompt 的后台：Codex、Claude 或 Generic CLI。
+- 至少一个可从 stdin 读取 prompt 的后台：Codex、Claude、Traex 或 Generic CLI。
 - 预配置工作区存在，且当前本机用户有权访问。
 
 Router 不安装或保管飞书 app secret。首次配置 `lark-cli` 应按其认证流程完成，禁止把 secret 打印到终端输出或写进 Skill 目录。
@@ -29,11 +31,13 @@ Router 不安装或保管飞书 app secret。首次配置 `lark-cli` 应按其�
 
 Bot 使用 tenant access token，不需要也不应该执行用户 `auth login`。缺少 bot scope 时，使用错误中的 `console_url` 进入开发者后台处理。
 
-## Open ID
+## Owner 与访客身份
 
-`allowedSenderIds` 使用用户 `ou_...` open_id，不使用用户名、user_id、union_id 或群 ID。Router 从 `im.message.receive_v1` 的 `sender_id` 获取该值。
+首次初始化通过所选 profile 的 `auth status --json --verify` 绑定 CLI 本人为唯一 owner，因此除了 bot 配置还需要用户登录。不要手填猜测的 owner ID，也不要用 bot 身份代替用户。
 
-Router 同时要求事件 `sender_type=user`，并拒绝 bot/app sender。bot 自己的 open_id 不能同时出现在 `allowedSenderIds` 和 `group.mentionIds`。
+默认只有 owner 可访问。访客由 owner 添加，必须指定未来的到期时间，只能使用 `/help`、`/ping`、`/status`、`/cancel`。旧 `allowedSenderIds` 不会自动授予其他用户权限；迁移见 [configuration.md](configuration.md)。访客参数使用 `ou_...` open_id，不使用用户名、user_id、union_id 或群 ID。
+
+Router 同时要求事件 `sender_type=user`，并拒绝 bot/app sender。
 
 群聊建议把 bot 自己的 open_id 配置到 `group.mentionIds`，Router 会匹配事件的 `mentions[].id`；文本 `mentionTokens` 只用于兼容或兜底。
 

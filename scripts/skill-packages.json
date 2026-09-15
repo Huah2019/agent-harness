@@ -4,6 +4,7 @@
     "assets/config.example.json",
     "assets/router-AGENTS.md",
     "references/configuration.md",
+    "references/installation.md",
     "references/prerequisites.md",
     "references/security-model.md",
     "references/troubleshooting.md",

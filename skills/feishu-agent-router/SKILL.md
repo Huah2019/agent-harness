@@ -10,6 +10,10 @@ description: >-
 
 支持两种执行模式：旧配置默认直连工作目录；`routing.mode=agent` 启用“通用路由目录 → AI 选会话 → 用户指定工作目录”。路由目录只放通用规则，个人路径只保存在用户配置中。会话路由配置先读 `references/configuration.md` 的“AI 会话路由”。
 
+## 首次安装入口
+
+用户首次安装、要求接通，或本机缺少依赖时，先读取 [references/installation.md](references/installation.md)，按“依赖检查 → 缺项安装 → 飞书与模型授权 → 用户目录配置 → 真实验证”引导。先确认 Node.js 可用，再运行下面的 Router 命令。不要假设拿到 Skill 就已经具备 CLI 和登录环境。
+
 ## 先确定路径
 
 开始时解析：
