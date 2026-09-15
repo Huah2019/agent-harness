@@ -1,7 +1,8 @@
 # agent-harness
 
-`agent-harness` 是一个本地 agent skill 承载仓库。当前仓库主要包含
-`agent-wiki` skill、它的 Go CLI，以及一份默认 Markdown 知识库。
+`agent-harness` 是一个本地 agent skill 承载仓库，包含 `agent-wiki`、
+`feishu-agent-router` 及默认 Markdown 知识库。可分发的代码与模板放在
+`skills/`，Router 的私人配置和运行数据放在仓库外。
 
 ## 目录结构
 
@@ -10,7 +11,11 @@
 ├── .agents/skills -> ../skills
 ├── agent-wiki/default-wiki/
 ├── docs/
-└── skills/agent-wiki/
+├── scripts/package-skill.py
+├── scripts/skill-packages.json
+└── skills/
+    ├── agent-wiki/
+    └── feishu-agent-router/
 ```
 
 - `.agents/skills` 是一个相对软链接，指向仓库内的 `skills` 目录，方便
@@ -18,6 +23,61 @@
 - `skills/agent-wiki` 存放 `agent-wiki` 的 skill 说明、Go CLI 源码和已构建的
   CLI 二进制。
 - `agent-wiki/default-wiki` 是本仓库自带的默认 Markdown 知识库。
+- `skills/feishu-agent-router` 是飞书到本地 Agent 的 Runtime、通用路由规则和安装 Skill。
+
+## Feishu Agent Router
+
+其他项目通过软链接挂载 `skills/feishu-agent-router`，源码只在此仓库维护。
+例如在另一个项目的 `.agents/skills/` 中执行：
+
+```bash
+ln -s /absolute/path/to/agent-harness/skills/feishu-agent-router feishu-agent-router
+```
+
+已有同名目录应先比对迁移，不能用 `ln -sf` 覆盖。软链接仅用于本地发现，发布包不包含软链接。
+
+私人目录约定：
+
+```text
+~/.config/feishu-agent-router/config.json          # 用户、项目路径、后台配置
+~/.local/share/feishu-agent-router/entry/AGENTS.md  # 实际使用的个性化路由规则
+~/.local/state/feishu-agent-router/                # 会话、队列和日志
+```
+
+配置和状态支持 XDG 环境变量。初始化时用 `--router-dir` 指向上述仓库外入口；
+`--workspace main=/absolute/path/to/project` 指定业务目录。
+Runtime 在 init、doctor、start/run 校验真实配置、状态和路由目录不得位于 Skill
+所在 Git 仓库内；通过软链接指入也会拒绝。业务目标目录可以是本仓库。
+详情见 [配置说明](skills/feishu-agent-router/references/configuration.md)。
+
+### 发布到 AgentBuddy
+
+只上传发布包，不上传整个仓库或正在运行的路由目录：
+
+```bash
+# 迁移或改动后，先检查白名单文件（允许新文件尚未 git add）
+python3 scripts/package-skill.py feishu-agent-router --check
+
+# 审查改动并将发布源码纳入 Git 后，再生成包
+python3 scripts/package-skill.py feishu-agent-router
+```
+
+包输出到 Git 忽略的 `dist/feishu-agent-router.skill`；命令不会上传。
+已有同名包时拒绝覆盖，先将上一次包移到仓库外归档，再重新生成。
+
+打包边界由 `scripts/skill-packages.json` 中的逐文件白名单决定：仅包含已被 Git
+跟踪的指定文件，不递归复制目录、不收运行数据、测试产物或软链接。
+新增 Runtime 依赖时需同步更新白名单。打包前扫描常见凭据、飞书真实标识与个人
+home 路径；命中时只输出文件和行号，不回显敏感值。
+扫描不能识别所有形式的秘密，发布前仍应审查这些文件；`.gitignore` 只是防误提交兜底，
+不能替代发布白名单。
+
+验证命令：
+
+```bash
+node --test skills/feishu-agent-router/scripts/tests/*.test.mjs
+python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+```
 
 ## 基本用法
 

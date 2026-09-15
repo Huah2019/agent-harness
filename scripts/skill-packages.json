@@ -1,0 +1,18 @@
+{
+  "feishu-agent-router": [
+    "SKILL.md",
+    "assets/config.example.json",
+    "assets/router-AGENTS.md",
+    "references/configuration.md",
+    "references/prerequisites.md",
+    "references/security-model.md",
+    "references/troubleshooting.md",
+    "scripts/bridge.mjs",
+    "scripts/private-paths.mjs",
+    "scripts/router-lib.mjs",
+    "scripts/router.mjs",
+    "scripts/routing.mjs",
+    "scripts/access.mjs",
+    "scripts/service.mjs"
+  ]
+}

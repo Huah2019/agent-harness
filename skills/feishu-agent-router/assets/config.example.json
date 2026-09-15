@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "allowedSenderIds": [
+    "ou_REPLACE_WITH_VERIFIED_CLI_USER"
+  ],
+  "defaultWorkspace": "main",
+  "workspaces": {
+    "main": "/absolute/path/to/project"
+  },
+  "activeBackend": "codex",
+  "routing": {
+    "mode": "direct"
+  },
+  "backends": {
+    "codex": {
+      "type": "codex",
+      "command": "codex",
+      "prefixArgs": [],
+      "envAllowlist": [],
+      "mode": "new"
+    }
+  },
+  "lark": {
+    "command": "lark-cli",
+    "profile": ""
+  },
+  "group": {
+    "requireMention": true,
+    "mentionTokens": [
+      "@机器人名称"
+    ],
+    "mentionIds": [
+      "ou_replace_with_bot_open_id"
+    ]
+  },
+  "reply": {
+    "inThread": true,
+    "maxChars": 5000,
+    "maxAttempts": 3,
+    "commandTimeoutSeconds": 15,
+    "concurrency": 2,
+    "pendingLimit": 20
+  },
+  "safety": {
+    "confirmPrefix": "/confirm"
+  },
+  "runtime": {
+    "stateDir": "/absolute/path/to/local/state/feishu-agent-router",
+    "queueLimit": 20,
+    "outboxLimit": 100,
+    "maxIncomingChars": 20000,
+    "taskTimeoutSeconds": 3600,
+    "startupTimeoutSeconds": 20,
+    "consumerRestartDelayMs": 3000,
+    "consumerRestartMaxDelayMs": 60000,
+    "consumerStableResetSeconds": 30,
+    "maxCapturedOutputChars": 1000000,
+    "maxEventAgeSeconds": 86400,
+    "dedupeLimit": 10000
+  },
+  "access": {
+    "ownerId": "ou_REPLACE_WITH_VERIFIED_CLI_USER"
+  }
+}

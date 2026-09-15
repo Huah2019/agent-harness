@@ -1,1 +1,27 @@
 /skills/agent-wiki/agent-wiki.yaml
+/.cadk/
+/dist/
+/.env*
+/config.json
+/state/
+/logs/
+/entry/
+/private/
+**/.DS_Store
+**/__pycache__/
+
+# Local Router data belongs outside this repository. These are fallback guards.
+/skills/feishu-agent-router/.env*
+/skills/feishu-agent-router/config.json
+/skills/feishu-agent-router/bridge.config.json
+/skills/feishu-agent-router/*.local.json
+/skills/feishu-agent-router/state/
+/skills/feishu-agent-router/logs/
+/skills/feishu-agent-router/runs/
+/skills/feishu-agent-router/entry/
+/skills/feishu-agent-router/private/
+/skills/feishu-agent-router/*-sessions.json
+/skills/feishu-agent-router/queue.json
+/skills/feishu-agent-router/selection.json
+/skills/feishu-agent-router/dedupe.json
+/skills/feishu-agent-router/AGENTS.md

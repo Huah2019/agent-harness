@@ -1,0 +1,95 @@
+{
+  "skill_name": "feishu-agent-router",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我已经有一个配置好事件订阅的飞书机器人，想让同事从手机私聊它，把请求交给我 Mac 上的 Codex。允许用户 open_id 是 ou_example123，默认工程是 /Users/example/Work/project-a。帮我把 Router 配好，但启动前先让我确认。",
+      "expected_output": "识别为首次安装；收集或使用已给输入生成安全配置；运行 doctor；不写入密钥；启动前停在明确确认点；给出 /ping 真实验证标准。",
+      "files": [],
+      "expectations": [
+        "输出给出使用 router.mjs init 生成配置的可执行命令，并使用已给 sender open_id 和工作区",
+        "输出要求初始化后运行 doctor，且没有要求把 app secret 或 token 写入 Router 配置",
+        "输出遵守用户要求，在 start 前停下等待确认",
+        "输出说明真实验收需要飞书 /ping 得到 pong，并验证 reply_succeeded 含 replyMessageId"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "飞书机器人发消息后没反应，但 router status 显示 running。帮我查一下，别改配置也别重启。",
+      "expected_output": "保持只读；依次检查 doctor、consumer 状态、bridge 日志中的 ignored reason 和飞书 /ping；区分收事件、Agent 执行与飞书回复三个阶段。",
+      "files": [],
+      "expectations": [
+        "输出明确保持只读，不修改配置且不重启",
+        "输出检查 doctor、status.consumer 和 bridge 日志中的 event_ignored reason",
+        "输出把事件接收、本地 Agent 执行、飞书回复持久化分成不同阶段",
+        "输出指出回复成功需要 reply_succeeded 和 replyMessageId，而不只是进程 running"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "这个飞书 Router 还要支持另一个仓库和公司封装的 Claude CLI。仓库别名叫 service-b，路径 /Users/example/Work/service-b；Claude 实际命令是 aiden x claude。请告诉我怎么加，且不要默认开 bypassPermissions 或复用上一次会话。",
+      "expected_output": "按 configuration reference 给出 workspaces 和 Claude backend 的最小配置修改；使用 prefixArgs 表达 aiden x claude；continue=false；不设置 bypassPermissions；修改后 doctor、重启和多工作区/后台验证。",
+      "files": [],
+      "expectations": [
+        "输出把 service-b 添加到 workspaces，且保留已有配置的最小修改语义",
+        "输出使用 command=aiden、prefixArgs=[x, claude] 和 type=claude 表达后台",
+        "输出设置 continue=false，且不设置 bypassPermissions",
+        "输出要求修改后 doctor、受控重启，并用 workspace/backend 控制命令验证"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "帮我给张三发一条飞书消息，告诉他评审改到下午三点。",
+      "expected_output": "识别为普通飞书发消息需求，不使用 Feishu Agent Router；转交即时通讯能力，并在真正发送前遵守对应确认规则。",
+      "files": [],
+      "expectations": [
+        "输出明确这不是 Router 的安装、配置、启停或排障场景",
+        "输出不运行 router.mjs，也不建议创建本机事件订阅"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "这条需求是从已经接通的 Router 转来的：请分析当前仓库为什么测试失败。",
+      "expected_output": "把业务请求交给当前工作区的 Agent 和适用 Skills，不把它误判成 Router 管理任务。",
+      "files": [],
+      "expectations": [
+        "输出直接进入当前仓库的只读测试诊断，而不是配置 Router",
+        "输出不运行 Router init/start/stop 或修改 sender/backend/workspace 配置"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "我要开发一个飞书机器人审批功能，帮我设计消息卡片和回调服务。",
+      "expected_output": "识别为机器人业务逻辑开发，不使用 Feishu Agent Router Runtime。",
+      "files": [],
+      "expectations": [
+        "输出说明 Router 只负责把允许消息转给本机 Agent，不是业务机器人框架",
+        "输出不建议使用 bundled bridge.mjs 承载审批回调业务"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "把 feishu-agent-router 改成 AI 会话路由。目标工程是 /Users/example/projects/app，入口用 /Users/example/router-entry，允许用户 ou_example123，后台用 traex-cli。先配好，不启动。",
+      "expected_output": "使用独立通用路由目录和配置中的 main 目标；init --router-dir 和 --backend traex；验证 doctor，保留未启动状态。",
+      "files": [],
+      "expectations": [
+        "业务路径保存在 workspaces，AGENTS.md 不硬编码个人工程",
+        "路由目录与目标工程目录不同",
+        "使用 traex 后台及已验证的非交互执行契约",
+        "不启动、不声称真实飞书或会话续接已验证"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "我已经在用 Router，想加 AGENTS.md 会话路由，之前配置和自定义规则都保留。告诉我怎么迁移，以及为什么手机里的“继续”没有续上电脑已有会话。",
+      "expected_output": "只添加 routing 配置和缺失的通用模板；解释只路由 Runtime 账本内当前作用域会话，不扫描桌面全部历史；不给出 init --force 覆盖方案。",
+      "files": [],
+      "expectations": [
+        "保留既有配置和 AGENTS.md",
+        "解释 sender chat workspace backend 隔离",
+        "解释不会自动接管桌面或旧仓库会话",
+        "区分进程、飞书 ping、真实业务续接验收"
+      ]
+    }
+  ]
+}
